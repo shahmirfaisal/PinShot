@@ -1,0 +1,6 @@
+build/
+build.noindex/
+build.log
+dist/
+xcuserdata/
+.DS_Store
