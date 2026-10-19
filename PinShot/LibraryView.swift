@@ -108,11 +108,8 @@ struct LibraryItem: View {
             Button("Copy Text") {
                 guard let source = CGImageSourceCreateWithURL(capture.url as CFURL, nil),
                       let cg = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return }
-                Task {
-                    let text = await TextRecognizer.recognize(cg)
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(text, forType: .string)
-                }
+                let mouse = NSEvent.mouseLocation
+                Task { await TextRecognizer.copyContent(of: cg, near: NSRect(x: mouse.x, y: mouse.y, width: 1, height: 1)) }
             }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([capture.url]) }
             Divider()

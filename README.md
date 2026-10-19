@@ -5,6 +5,7 @@ A free, open-source screenshot tool for macOS that keeps your captures **floatin
 ## Features
 
 - **⇧⌘2** to capture: drag to select an area, or **click a window** to capture just that window
+- **⇧⌘1** to **capture text**: drag over any text — in an image, a video, a PDF, an app that won't let you select — and it's copied to your clipboard. QR codes and barcodes are read too
 - The capture **floats above all windows**, exactly where you took it
 - **Move** it by dragging, **resize** by scrolling, pinching or dragging its edges, **double-click** for 100%
 - **Copy text** out of any capture with built-in text recognition (OCR) — no internet needed
@@ -13,6 +14,12 @@ A free, open-source screenshot tool for macOS that keeps your captures **floatin
 - A **library** of past captures — double-click to pin again, or drag them anywhere
 - Full-screen capture from the menu bar
 - Lives in the menu bar; change the shortcut and other options in Settings
+
+## Capturing text
+
+Press **⇧⌘1**, then drag over the text you want (or click a window). The recognized text goes straight to the clipboard — nothing is pinned or saved. If the area contains a QR code or barcode, its contents (for example a link) are copied as well. Recognition runs entirely on your Mac. In Settings you can choose whether line breaks are kept.
+
+You can also copy the text out of any pin (⌘T) or library item later.
 
 ## Using a pin
 

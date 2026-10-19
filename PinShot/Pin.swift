@@ -63,18 +63,7 @@ final class PinController: NSObject, ObservableObject, NSWindowDelegate {
     }
 
     func copyText() {
-        Task {
-            let text = await TextRecognizer.recognize(cgImage)
-            if text.isEmpty {
-                Toast.show("No text found", near: panel.frame)
-            } else {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(text, forType: .string)
-                let lines = text.split(separator: "\n").count
-                Toast.show("Copied text (\(lines) line\(lines == 1 ? "" : "s"))", near: panel.frame)
-            }
-        }
+        Task { await TextRecognizer.copyContent(of: cgImage, near: panel.frame) }
     }
 
     func save() {
@@ -371,20 +360,66 @@ final class PinManager: ObservableObject {
 
 // MARK: - Text recognition
 
+struct RecognizedContent {
+    var lines: [String] = []
+    /// Contents of QR codes / barcodes found in the image.
+    var codes: [String] = []
+
+    var isEmpty: Bool { lines.isEmpty && codes.isEmpty }
+
+    /// What gets copied: codes first (e.g. a QR link), then the text.
+    @MainActor
+    var clipboardString: String {
+        let text = AppSettings.shared.keepLineBreaks ? lines.joined(separator: "\n") : lines.joined(separator: " ")
+        return (codes + (text.isEmpty ? [] : [text])).joined(separator: "\n")
+    }
+
+    var summary: String {
+        var parts: [String] = []
+        if !codes.isEmpty { parts.append(codes.count == 1 ? "QR/barcode" : "\(codes.count) codes") }
+        if !lines.isEmpty { parts.append("\(lines.count) line\(lines.count == 1 ? "" : "s") of text") }
+        return "Copied " + parts.joined(separator: " + ")
+    }
+}
+
 enum TextRecognizer {
-    /// Reads text in the image (on a background thread) using macOS's built-in OCR.
-    nonisolated static func recognize(_ image: CGImage) async -> String {
+    /// Reads text and QR codes/barcodes in the image (on a background thread), using macOS's built-in Vision.
+    nonisolated static func read(_ image: CGImage) async -> RecognizedContent {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let request = VNRecognizeTextRequest()
-                request.recognitionLevel = .accurate
-                request.usesLanguageCorrection = true
-                request.automaticallyDetectsLanguage = true
-                try? VNImageRequestHandler(cgImage: image).perform([request])
-                let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-                continuation.resume(returning: lines.joined(separator: "\n"))
+                let text = VNRecognizeTextRequest()
+                text.recognitionLevel = .accurate
+                text.usesLanguageCorrection = true
+                text.automaticallyDetectsLanguage = true
+                let codes = VNDetectBarcodesRequest()
+                try? VNImageRequestHandler(cgImage: image).perform([text, codes])
+
+                var result = RecognizedContent()
+                result.lines = (text.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+                var seen = Set<String>()
+                result.codes = (codes.results ?? []).compactMap(\.payloadStringValue).filter { seen.insert($0).inserted }
+                continuation.resume(returning: result)
             }
         }
+    }
+
+    /// Just the text, joined with line breaks.
+    nonisolated static func recognize(_ image: CGImage) async -> String {
+        await read(image).lines.joined(separator: "\n")
+    }
+
+    /// Reads the image and copies the result, showing a short message near `rect`.
+    @MainActor
+    static func copyContent(of image: CGImage, near rect: NSRect) async {
+        let content = await read(image)
+        if content.isEmpty {
+            Toast.show("No text found", near: rect)
+            return
+        }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(content.clipboardString, forType: .string)
+        Toast.show(content.summary, near: rect)
     }
 }
 

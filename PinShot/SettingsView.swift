@@ -32,10 +32,15 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Capturing") {
-                LabeledContent("Capture shortcut") { ShortcutRecorder() }
+                LabeledContent("Capture & pin") { ShortcutRecorder(slot: .capture) }
+                LabeledContent("Capture text") { ShortcutRecorder(slot: .text) }
                 Toggle("Copy every capture to the clipboard", isOn: $settings.copyOnCapture)
-                Text("Drag to capture an area, or click to capture a single window. The capture stays pinned on top of everything.")
+                Text("Drag to capture an area, or click to capture a single window. Captures stay pinned on top of everything; Capture Text copies the text or QR code instead.")
                     .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Text recognition") {
+                Toggle("Keep line breaks when copying text", isOn: $settings.keepLineBreaks)
             }
 
             Section("Library") {
@@ -87,12 +92,13 @@ struct SettingsView: View {
 
 /// Click, then press a new key combination.
 struct ShortcutRecorder: View {
+    let slot: HotKeySlot
     @ObservedObject private var settings = AppSettings.shared
     @State private var recording = false
     @State private var monitor: Any?
 
     var body: some View {
-        Button(recording ? "Press shortcut…" : settings.hotKeyDisplay) {
+        Button(recording ? "Press shortcut…" : (slot == .capture ? settings.hotKeyDisplay : settings.textHotKeyDisplay)) {
             recording ? stop() : start()
         }
         .frame(minWidth: 120)
@@ -106,9 +112,15 @@ struct ShortcutRecorder: View {
             if event.keyCode == 53 { stop(); return nil } // Esc cancels
             let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
             guard !flags.intersection([.command, .option, .control]).isEmpty else { return nil }
-            settings.hotKeyCode = Int(event.keyCode)
-            settings.hotKeyModifiers = HotKeyCenter.carbonModifiers(from: flags)
-            settings.hotKeyDisplay = HotKeyCenter.displayString(for: event)
+            let code = Int(event.keyCode)
+            let mods = HotKeyCenter.carbonModifiers(from: flags)
+            let display = HotKeyCenter.displayString(for: event)
+            switch slot {
+            case .capture:
+                settings.hotKeyCode = code; settings.hotKeyModifiers = mods; settings.hotKeyDisplay = display
+            case .text:
+                settings.textHotKeyCode = code; settings.textHotKeyModifiers = mods; settings.textHotKeyDisplay = display
+            }
             stop()
             return nil
         }

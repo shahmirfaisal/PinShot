@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             other.terminate()
         }
         _ = CaptureStore.shared
-        HotKeyCenter.shared.start { CaptureController.shared.startCapture() }
+        HotKeyCenter.shared.start(capture: { CaptureController.shared.startCapture(mode: .pin) },
+                                  text: { CaptureController.shared.startCapture(mode: .text) })
     }
 }
 
@@ -21,7 +22,8 @@ struct PinShotApp: App {
 
     var body: some Scene {
         MenuBarExtra("PinShot", systemImage: "pin") {
-            Button("Capture Area or Window  \(settings.hotKeyDisplay)") { CaptureController.shared.startCapture() }
+            Button("Capture Area or Window  \(settings.hotKeyDisplay)") { CaptureController.shared.startCapture(mode: .pin) }
+            Button("Capture Text  \(settings.textHotKeyDisplay)") { CaptureController.shared.startCapture(mode: .text) }
             Button("Capture Full Screen") { CaptureController.shared.captureFullScreen() }
             Divider()
             Button("Show Library…") { LibraryWindowController.shared.show() }

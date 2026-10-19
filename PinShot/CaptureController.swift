@@ -3,19 +3,30 @@ import ScreenCaptureKit
 
 /// Runs a capture: freezes the screen, lets you pick an area or a window,
 /// then saves it to the library and pins it where it was.
+/// What a capture is for.
+enum CaptureMode {
+    case pin    // save to the library and pin it on screen
+    case text   // just copy the text / QR code in it
+}
+
 @MainActor
 final class CaptureController {
     static let shared = CaptureController()
 
     private var overlays: [SelectionOverlayWindow] = []
     private var busy = false
+    private var mode: CaptureMode = .pin
 
     // MARK: Area / window
 
-    func startCapture() {
+    func startCapture(mode: CaptureMode = .pin) {
         guard !busy else { return }
         guard ensurePermission() else { return }
         busy = true
+        self.mode = mode
+        let hint = mode == .text
+            ? "Drag over text or a QR code to copy it  ·  Click a window  ·  Esc to cancel"
+            : "Drag to capture an area  ·  Click a window  ·  Esc to cancel"
         Task {
             do {
                 let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
@@ -23,7 +34,7 @@ final class CaptureController {
                 var created: [SelectionOverlayWindow] = []
                 for screen in NSScreen.screens {
                     let image = try await ScreenCapturer.capture(screen: screen, content: content)
-                    created.append(SelectionOverlayWindow(screen: screen, image: image, windows: windows) { result in
+                    created.append(SelectionOverlayWindow(screen: screen, image: image, windows: windows, hint: hint) { result in
                         CaptureController.shared.finish(result)
                     })
                 }
@@ -47,12 +58,21 @@ final class CaptureController {
 
         switch result {
         case .area(let image, let frame, let scale):
-            deliver(image, frame: frame, scale: scale)
+            handle(image, frame: frame, scale: scale)
         case .window(let picked, let fallback, let scale):
             Task {
                 let image = (try? await ScreenCapturer.capture(window: picked.window, scale: scale)) ?? fallback
-                deliver(image, frame: picked.frame, scale: scale)
+                handle(image, frame: picked.frame, scale: scale)
             }
+        }
+    }
+
+    private func handle(_ image: CGImage, frame: NSRect, scale: CGFloat) {
+        switch mode {
+        case .pin:
+            deliver(image, frame: frame, scale: scale)
+        case .text:
+            Task { await TextRecognizer.copyContent(of: image, near: frame) }
         }
     }
 
@@ -146,8 +166,9 @@ enum SelectionResult {
 final class SelectionOverlayWindow: NSWindow {
     private let selectionView: SelectionView
 
-    init(screen: NSScreen, image: CGImage, windows: [PickableWindow], onDone: @escaping (SelectionResult?) -> Void) {
-        selectionView = SelectionView(image: image, screen: screen, windows: windows, onDone: onDone)
+    init(screen: NSScreen, image: CGImage, windows: [PickableWindow], hint: String,
+         onDone: @escaping (SelectionResult?) -> Void) {
+        selectionView = SelectionView(image: image, screen: screen, windows: windows, hint: hint, onDone: onDone)
         super.init(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         setFrame(screen.frame, display: false)
         level = .screenSaver
@@ -176,6 +197,7 @@ final class SelectionView: NSView {
     /// Windows on this screen, in view coordinates, front-most first.
     private let windows: [(PickableWindow, NSRect)]
     private let onDone: (SelectionResult?) -> Void
+    private let hint: String
 
     private var dragStart: NSPoint?
     private var selection: NSRect?
@@ -183,9 +205,11 @@ final class SelectionView: NSView {
     private var mouse: NSPoint = .zero
     private var finished = false
 
-    init(image: CGImage, screen: NSScreen, windows: [PickableWindow], onDone: @escaping (SelectionResult?) -> Void) {
+    init(image: CGImage, screen: NSScreen, windows: [PickableWindow], hint: String,
+         onDone: @escaping (SelectionResult?) -> Void) {
         self.image = image
         self.screen = screen
+        self.hint = hint
         self.onDone = onDone
         let origin = screen.frame.origin
         self.windows = windows.compactMap { w in
@@ -241,7 +265,7 @@ final class SelectionView: NSView {
         }
 
         if selection == nil {
-            drawLabel("Drag to capture an area  ·  Click a window  ·  Esc to cancel",
+            drawLabel(hint,
                       at: NSPoint(x: bounds.midX, y: bounds.maxY - 70), centered: true)
         }
     }
@@ -313,6 +337,7 @@ final class SelectionView: NSView {
                                width: rect.width * s, height: rect.height * s).integral
         return image.cropping(to: pixelRect)
     }
+
 
 
     private func done(_ result: SelectionResult?) {
